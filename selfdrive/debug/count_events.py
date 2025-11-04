@@ -9,6 +9,7 @@ from typing import cast
 from cereal.services import SERVICE_LIST
 from openpilot.tools.lib.logreader import LogReader, ReadMode
 from openpilot.selfdrive.test.process_replay.migration import migrate_all
+from openpilot.system.hardware.base import HardwareBase
 
 if __name__ == "__main__":
   cnt_events: Counter = Counter()
@@ -41,7 +42,7 @@ if __name__ == "__main__":
           alerts.append((t, at))
     elif msg.which() == 'pandaStates':
       if ignition_off is None:
-        ign = any(ps.ignitionLine or ps.ignitionCan for ps in msg.pandaStates)
+        ign = HardwareBase.get_ignition_state(msg.pandaStates)
         if not ign:
           ignition_off = msg.logMonoTime
           break
