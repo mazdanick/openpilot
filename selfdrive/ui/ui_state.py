@@ -6,6 +6,7 @@ from collections.abc import Callable
 from enum import Enum
 from cereal import messaging, log
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.ignition import get_ignition_state
 from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
@@ -98,7 +99,7 @@ class UIState:
         self.panda_type = panda_states[0].pandaType
         # Check ignition status across all pandas
         if self.panda_type != log.PandaState.PandaType.unknown:
-          self.ignition = any(state.ignitionLine or state.ignitionCan for state in panda_states)
+          self.ignition = get_ignition_state(panda_states)
     elif self.sm.frame - self.sm.recv_frame["pandaStates"] > 5 * rl.get_fps():
       self.panda_type = log.PandaState.PandaType.unknown
 
