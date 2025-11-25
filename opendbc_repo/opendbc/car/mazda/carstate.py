@@ -72,12 +72,9 @@ class CarState(CarStateBase, CarStateExt):
     ret.gasPressed = cp.vl["ENGINE_DATA"]["PEDAL_GAS"] > 0
 
     # Either due to low speed or hands off
-    lkas_blocked_raw = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
-    lkas_blocked = lkas_blocked_raw
-    if self.CP.carFingerprint == CAR.MAZDA_CX5_2022:
-      # CX-5 2022 keeps torque available until ~5 mph even though LKAS_BLOCK is raised
-      if ret.standstill or speed_kph < 8.0:
-        lkas_blocked = False
+    lkas_blocked = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
+    lkas_req = cp.vl["STEER_RATE"]["LKAS_REQUEST"]
+    lkas_eff = cp.vl["STEER_RATE"]["LKAS_EFFECTIVE"]
 
     if self.CP.minSteerSpeed > 0:
       # LKAS is enabled at 52kph going up and disabled at 45kph going down
@@ -110,11 +107,16 @@ class CarState(CarStateBase, CarStateExt):
     # Check if LKAS is disabled due to lack of driver torque when all other states indicate
     # it should be enabled (steer lockout). Don't warn until we actually get lkas active
     # and lose it again, i.e, after initial lkas activation
-    if self.CP.carFingerprint in [CAR.MAZDA_CX9_2021, CAR.MAZDA_CX5_2022]:
-      ret.steerFaultTemporary = False
+    ## From 19 rlogs: when LKAS_BLOCK=1 and we were requesting nonzero torque, |REQ-EFF| ranged 1–800,
+    ## but when REQ was ~0 the noise floor in LKAS_EFFECTIVE jumped as high as 900. The smallest
+    ## observed divergence with a nonzero request was 1–2 counts; using >5 filters the noise yet
+    ## still captures every true clamp seen (most were 50–800), without any speed gating.
+    requesting = abs(lkas_req) > 1
+    blocked_output = abs(lkas_req - lkas_eff) > 5
+    if self.CP.carFingerprint in (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021):
+      ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked and requesting and blocked_output
     else:
-      # On if no driver torque the last 5 seconds
-      ret.steerFaultTemporary = cp.vl["STEER_RATE"]["HANDS_OFF_5_SECONDS"] == 1
+      ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked
 
     self.acc_active_last = ret.cruiseState.enabled
 
