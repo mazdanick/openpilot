@@ -21,9 +21,11 @@ class CarState(CarStateBase, CarStateExt):
     self.acc_active_last = False
     self.lkas_allowed_speed = False
     self.lkas_request_threshold = 1 ## Minimum request to consider active commanding
-    self.lkas_divergence_threshold = 20 ## Max acceptable difference between request and effective
+    self.lkas_divergence_threshold = 10 ## Max acceptable difference between request and effective
+    self.lkas_block_persistence_frames = 50 ## Require ~1s of persistent block+divergence after moving
 
     self.distance_button = 0
+    self._block_persist = 0
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -34,6 +36,7 @@ class CarState(CarStateBase, CarStateExt):
 
     prev_distance_button = self.distance_button
     self.distance_button = cp.vl["CRZ_BTNS"]["DISTANCE_LESS"]
+    prev_block_persist = self._block_persist
 
     self.parse_wheel_speeds(ret,
       cp.vl["WHEEL_SPEEDS"]["FL"],
@@ -115,12 +118,22 @@ class CarState(CarStateBase, CarStateExt):
     ## still captures every true clamp seen (most were 50–800), without any speed gating.
     requesting = abs(lkas_requested) > self.lkas_request_threshold
     blocked_output = abs(lkas_requested - lkas_effective) > self.lkas_divergence_threshold
+    # Persistence: only start counting once rolling; reset at standstill
+    if ret.standstill:
+      block_persist = 0
+    else:
+      if lkas_blocked and requesting and blocked_output:
+        block_persist = min(prev_block_persist + 1, self.lkas_block_persistence_frames)
+      else:
+        block_persist = 0
+
     if self.CP.carFingerprint in (CAR.MAZDA_CX5_2022, CAR.MAZDA_CX9_2021):
-      ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked and requesting and blocked_output
+      ret.steerFaultTemporary = self.lkas_allowed_speed and block_persist >= self.lkas_block_persistence_frames
     else:
       ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked
 
     self.acc_active_last = ret.cruiseState.enabled
+    self._block_persist = block_persist
 
     self.crz_btns_counter = cp.vl["CRZ_BTNS"]["CTR"]
 
